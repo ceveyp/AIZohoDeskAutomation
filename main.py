@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-import app.zoho_desk
+from app import zoho_desk
 from app.logger import setup_logging
 from app.settings import get_settings
 
@@ -18,20 +18,20 @@ def create_app() -> FastAPI:
             app.state.http_client = client
             yield
 
-    fastapi_app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    application = FastAPI(title=settings.app_name, lifespan=lifespan)
 
-    @fastapi_app.get("/health")
+    @application.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    fastapi_app.include_router(app.zoho_desk.router)
-    return fastapi_app
+    application.include_router(zoho_desk.router)
+    return application
 
 
-fastapi_app = create_app()
+app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
 
     s = get_settings()
-    uvicorn.run("main:fastapi_app", host=s.host, port=s.port, reload=True)
+    uvicorn.run("main:app", host=s.host, port=s.port, reload=True)
