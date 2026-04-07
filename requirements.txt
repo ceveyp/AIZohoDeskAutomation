@@ -4,3 +4,6 @@ pydantic-settings>=2.6.0
 python-dotenv>=1.0.0
 trafilatura
 lxml_html_clean
+validators
+langchain_openai
+langchain

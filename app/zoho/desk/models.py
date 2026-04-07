@@ -11,8 +11,8 @@ class Ticket(BaseModel):
     email: Optional[str] = Field(default=None)
     contactId: str
     channel: str
-    isSpam: bool
-    isArchived: bool
+    isSpam: Optional[bool] = Field(default=False)
+    isArchived: Optional[bool] = Field(default=False)
     status: str
     createdTime: datetime
 

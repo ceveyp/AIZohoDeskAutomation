@@ -75,5 +75,8 @@ class ZohoDeskClient:
     def get_thread(self, ticket_id: str, thread_id: str) -> Thread:
         url = f"{self._desk_base_url}/tickets/{ticket_id}/threads/{thread_id}"
         thread = Thread(**self._api_call('GET', url))
-        thread.content = trafilatura.extract(thread.content)
+        if thread.content:
+            extracted_text = trafilatura.extract(thread.content)
+            if extracted_text:
+                thread.content = extracted_text
         return thread

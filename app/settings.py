@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     zoho_redirect_uri: str
     zoho_refresh_token: str
     zoho_scopes: str
+    openrouter_api_key: str
+    apparel_magic_api_key: str
 
 
 @lru_cache
