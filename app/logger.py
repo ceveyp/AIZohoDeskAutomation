@@ -12,18 +12,18 @@ def disable_package_loggers():
 
 
 def setup_logging():
-    formatter = logging.Formatter(
-        fmt="%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
-    logger.propagate = False
+    """Configure root logging once (idempotent) so app loggers emit to stdout."""
+    root = logging.getLogger()
+    if not root.handlers:
+        formatter = logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+        root.propagate = False
+    root.setLevel(logging.DEBUG)
     disable_package_loggers()
 
 

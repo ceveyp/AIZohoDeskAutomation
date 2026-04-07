@@ -1,34 +1,25 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, Depends
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
+from app.services.ticket_webhook import process_zoho_webhook_events
 from app.settings import Settings, get_settings
 
-router = APIRouter(tags=["zoho_desk"])
+router = APIRouter(prefix="/webhooks", tags=["zoho_desk"])
 
 
-@router.api_route("/ticket", methods=["GET", "POST"])
-async def ticket(
-        request: Request,
-        settings: Annotated[Settings, Depends(get_settings)]
-) -> dict[str, Any]:
-    if request.method == "GET":
-        return {
-            "method": "GET",
-            "query": dict(request.query_params),
-        }
-
-    content_type = request.headers.get("content-type", "")
-    if "application/json" in content_type:
-        try:
-            body: Any = await request.json()
-        except Exception:
-            body = None
-    else:
-        body = (await request.body()).decode("utf-8", errors="replace") or None
-
-    return {
-        "method": "POST",
-        "content_type": content_type or None,
-        "body": body,
-    }
+@router.post("/zoho")
+async def zoho_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, str]:
+    if settings.webhook_secret_token:
+        q = request.query_params.get("token")
+        if q != settings.webhook_secret_token:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    raw: Any = await request.json()
+    http: httpx.AsyncClient = request.app.state.http_client
+    background_tasks.add_task(process_zoho_webhook_events, raw, http, settings)
+    return {"status": "accepted"}

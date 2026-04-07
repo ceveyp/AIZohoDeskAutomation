@@ -29,10 +29,11 @@ instructions = (
     You will receive some context about the ticket, any associated contact info like email or phone, the subject and ticket content.
     
     You will then categorize the ticket according to intent:
-        -order_status: the customer wants to know the status of their order, you need to respond with the order ID
-        -support: any other tickets should go to a support agent
+        - order_status: the customer wants to know the status of their order (shipment, tracking, when it ships, etc.).
+        - support: any other tickets should go to a support agent.
     
-    Note the order Id is required for order_status tickets, otherwise it is ignored. 
+    If the customer mentions a specific order number or order ID, set order_id to that value.
+    If they ask about order status but do not name a specific order, leave order_id empty (null).
     
     You will also find any additional contact info that might be in the ticket body like name, email or phone, if there are any. 
     """
@@ -46,3 +47,7 @@ class IntentClassifier(BaseAgent):
     def classify(self, subject: str, content: str) -> TicketIntent:
         prompt = f"Subject: {subject}\n\nContent:\n{content}"
         return self.parse([prompt])
+
+    async def classify_async(self, subject: str, content: str) -> TicketIntent:
+        prompt = f"Subject: {subject}\n\nContent:\n{content}"
+        return await self.aparse([prompt])

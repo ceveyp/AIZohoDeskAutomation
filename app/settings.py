@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     zoho_redirect_uri: str
     zoho_refresh_token: str
     zoho_scopes: str
+    zoho_accounts_domain: str = "accounts.zoho.com"
+    webhook_secret_token: str | None = None
     openrouter_api_key: str
     apparel_magic_api_key: str
 

@@ -86,6 +86,7 @@ def get_tickets():
                         logger.warn(f"No orders found for customer {likely_client_email}")
                         continue
                 if order:
+                    pass
 
 
             print("-------------------------------------------------")
