@@ -120,9 +120,12 @@ from typing import List, Optional
 
 
 class OrderItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     id: Optional[str] = None
     row_id: Optional[str] = None
     sku_id: Optional[str] = None
+    sku_alt: Optional[str] = None
     product_id: Optional[str] = None
     style_number: Optional[str] = None
     description: Optional[str] = None
@@ -131,6 +134,9 @@ class OrderItem(BaseModel):
     attr_3: Optional[str] = None
     upc: Optional[str] = None
     qty: Optional[str] = "0.00"
+    qty_open: Optional[str] = None
+    qty_shipped: Optional[str] = None
+    date_due: Optional[str] = None
     unit_price: Optional[float] = 0.0
     amount: Optional[float] = 0.0
     is_taxable: Optional[str] = "1"

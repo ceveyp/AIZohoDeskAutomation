@@ -9,7 +9,7 @@ import httpx
 import trafilatura
 
 from app.apparel_magic.client_async import AsyncApparelMagicClient
-from app.apparel_magic.models import Order
+from app.apparel_magic.models import Order, OrderItem
 from app.settings import Settings
 from app.zoho.desk.client_async import AsyncZohoDeskClient
 from app.zoho.desk.intent_classifier import IntentClassifier
@@ -54,18 +54,84 @@ def _sort_orders_newest_first(orders: list[Order]) -> list[Order]:
     return sorted(orders, key=lambda o: o.date or "", reverse=True)
 
 
-def _format_one_order_html(o: Order) -> str:
-    lines = [
-        f"Order ID: {o.order_id or 'N/A'}",
-        f"Date: {o.date or 'N/A'}",
-        f"Open: {o.is_open or 'N/A'}",
-        f"Fulfillment: {o.fulfillment_status or 'N/A'}",
-        f"Qty ordered / shipped: {o.qty or '0'} / {o.qty_shipped or '0'}",
+def _fmt_money(amount: float | int | None) -> str:
+    if amount is None:
+        return "—"
+    try:
+        return f"${float(amount):,.2f}"
+    except (TypeError, ValueError):
+        return str(amount)
+
+
+def _line_sku(line: OrderItem) -> str:
+    if line.sku_alt:
+        return line.sku_alt
+    if line.style_number and line.attr_2 and line.size:
+        return f"{line.style_number} / {line.attr_2} / {line.size}"
+    return line.sku_id or line.style_number or "—"
+
+
+def _format_line_item_html(line: OrderItem, index: int, currency: str) -> str:
+    desc = line.description or "Product"
+    cur = f" {currency}" if currency else ""
+    cur_suffix = f" {currency}" if currency else ""
+    parts = [
+        f"Item {index}: {desc}",
+        f"SKU: {_line_sku(line)}",
+        f"Size: {line.size or '—'}",
+        f"Color: {line.attr_2 or '—'}",
+        f"Qty: {line.qty or '0'}",
+        f"Line amount: {_fmt_money(line.amount)}{cur_suffix}",
     ]
-    if o.ship_via:
-        lines.append(f"Ship via: {o.ship_via}")
-    inner = "<br />".join(html.escape(line) for line in lines)
+    if line.qty_open is not None or line.qty_shipped is not None:
+        parts.append(
+            f"Qty open / shipped: {line.qty_open or '0'} / {line.qty_shipped or '0'}"
+        )
+    if line.date_due:
+        parts.append(f"Ship by: {line.date_due}")
+    inner = "<br />".join(html.escape(p) for p in parts)
     return f"<p>{inner}</p>"
+
+
+def _format_one_order_html(o: Order) -> str:
+    cur = o.currency_name or ""
+    oid = html.escape(str(o.order_id or "N/A"))
+    header_lines = [
+        f"Order date: {o.date or '—'}",
+        f"Due date: {o.date_due or '—'}",
+    ]
+    if o.date_start:
+        header_lines.append(f"Start date: {o.date_start}")
+    if o.last_modified_time:
+        header_lines.append(f"Last updated: {o.last_modified_time}")
+    header_lines.extend(
+        [
+            f"Overall fulfillment: {o.fulfillment_status or '—'}",
+            f"WMS status: {o.wms_status or '—'}",
+            f"Order qty (open / shipped): {o.qty_open or '0'} / {o.qty_shipped or '0'}",
+        ]
+    )
+    if o.ship_via:
+        header_lines.append(f"Ship via: {o.ship_via}")
+    if o.balance is not None:
+        header_lines.append(f"Balance: {_fmt_money(o.balance)}{(' ' + cur) if cur else ''}")
+
+    header_inner = "<br />".join(html.escape(x) for x in header_lines)
+    blocks = [f"<p><b>Order {oid}</b><br />{header_inner}</p>"]
+
+    items = o.order_items or []
+    if items:
+        blocks.append("<p><b>" + html.escape("Items") + "</b></p>")
+        for i, line in enumerate(items, start=1):
+            blocks.append(_format_line_item_html(line, i, cur))
+    else:
+        blocks.append(
+            "<p>"
+            + html.escape("No line items were returned for this order.")
+            + "</p>"
+        )
+
+    return "".join(blocks)
 
 
 def _build_order_status_html(orders: list[Order]) -> str:
