@@ -229,11 +229,13 @@ async def process_ticket_add_payload(
     if oid:
         order = await am.get_order_by_id(oid)
         if not order:
-            msg = _plain_text_to_zoho_html(
-                "Thank you for contacting Gameday Social. We could not find that order "
-                f"number ({oid}) in our system for your account."
+            logger.info(
+                "Order %s not found in AM for ticket %s; leaving ticket for support",
+                oid,
+                ticket_id,
             )
-        elif (
+            return
+        if (
             order.customer_id
             and customer.customer_id
             and str(order.customer_id) != str(customer.customer_id)
