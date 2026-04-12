@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -53,11 +54,40 @@ def _resolve_requester_email(payload: dict[str, Any]) -> str | None:
     return None
 
 
-async def _html_to_text(html: str | None) -> str:
-    if not html:
+def _strip_html_to_plain(fragment: str) -> str:
+    """Remove tags and decode entities when trafilatura yields nothing (e.g. short Zoho Desk markup)."""
+    text = re.sub(
+        r"<script\b[^>]*>.*?</script>",
+        " ",
+        fragment,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = re.sub(
+        r"<style\b[^>]*>.*?</style>",
+        " ",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+async def _html_to_text(html_fragment: str | None) -> str:
+    if not html_fragment:
         return ""
-    extracted = await asyncio.to_thread(trafilatura.extract, html)
-    return (extracted or "").strip()
+    extracted = await asyncio.to_thread(trafilatura.extract, html_fragment)
+    text = (extracted or "").strip()
+    if text:
+        return text
+    fallback = _strip_html_to_plain(html_fragment)
+    if fallback:
+        logger.debug(
+            "trafilatura returned empty description; using HTML strip fallback (%d chars)",
+            len(fallback),
+        )
+    return fallback
 
 
 def _sort_orders_newest_first(orders: list[Order]) -> list[Order]:
