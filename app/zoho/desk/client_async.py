@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import trafilatura
 
-from app.http.async_http import async_request_with_retries
+from app.async_http import async_request_with_retries
 from app.settings import Settings
 from app.zoho.desk.models import Conversation, Thread, Ticket
 

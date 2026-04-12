@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from app.apparel_magic.models import Customer, Order
-from app.http.async_http import async_request_with_retries
+from app.async_http import async_request_with_retries
 from app.logger import get_logger
 from app.settings import Settings
 
@@ -97,3 +97,53 @@ class AsyncApparelMagicClient:
         except Exception as e:
             logger.exception("Error fetching orders for customer %s", customer_id)
             raise RuntimeError(f"Error fetching orders for customer ({customer_id}): {e}") from e
+
+    async def get_raw_product_by_id(self, product_id: str) -> dict[str, Any] | None:
+        """Single product row from AM ``GET /products/{id}`` (first element of ``response``)."""
+        url = f"{self._base_url}/products/{product_id}"
+        try:
+            resp = await self._api_call("GET", url)
+            rows = resp.get("response") or []
+            if not rows:
+                return None
+            row = rows[0]
+            return row if isinstance(row, dict) else None
+        except Exception as e:
+            logger.exception("Error fetching product %s", product_id)
+            raise RuntimeError(f"Error fetching product ({product_id}): {e}") from e
+
+    async def get_raw_products_by_style_number(self, style_number: str) -> list[dict[str, Any]]:
+        """Products where ``style_number`` equals the given value (exact AM filter)."""
+        url = f"{self._base_url}/products"
+        params = {
+            "parameters[0][field]": "style_number",
+            "parameters[0][operator]": "=",
+            "parameters[0][value]": style_number,
+        }
+        try:
+            resp = await self._api_call("GET", url, params=params)
+            rows = resp.get("response") or []
+            return [r for r in rows if isinstance(r, dict)]
+        except Exception as e:
+            logger.exception("Error fetching products by style_number %s", style_number)
+            raise RuntimeError(
+                f"Error fetching products by style_number ({style_number}): {e}"
+            ) from e
+
+    async def get_raw_inventory_by_product_id(self, product_id: str) -> list[dict[str, Any]]:
+        """SKU rows from ``GET /inventory`` filtered by ``product_id`` (exact match)."""
+        url = f"{self._base_url}/inventory"
+        params = {
+            "parameters[0][field]": "product_id",
+            "parameters[0][operator]": "=",
+            "parameters[0][value]": product_id,
+        }
+        try:
+            resp = await self._api_call("GET", url, params=params)
+            rows = resp.get("response") or []
+            return [r for r in rows if isinstance(r, dict)]
+        except Exception as e:
+            logger.exception("Error fetching inventory for product_id %s", product_id)
+            raise RuntimeError(
+                f"Error fetching inventory for product_id ({product_id}): {e}"
+            ) from e

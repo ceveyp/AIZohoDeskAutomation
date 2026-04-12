@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     webhook_secret_token: str | None = None
     openrouter_api_key: str
     apparel_magic_api_key: str
+    ii_hostname: str
+    ii_product_search_api_key: str
+    # Optional: if the search API returns a numeric score/similarity on each hit (higher = better match).
+    product_search_min_confidence: float | None = None
+    # Optional: minimum gap between 1st and 2nd hit scores (same scale as above) to avoid ambiguous matches.
+    product_search_min_leader_gap: float | None = None
 
 
 @lru_cache

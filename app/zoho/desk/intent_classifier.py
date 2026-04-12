@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from app.agent.base import BaseAgent
 from app.constants import SupportedModels
 
-Intent = Literal['order_status', 'support']
+Intent = Literal["order_status", "product_inquiry", "support"]
 
 
 class TicketIntent(BaseModel):
@@ -30,10 +30,13 @@ instructions = (
     
     You will then categorize the ticket according to intent:
         - order_status: the customer wants to know the status of their order (shipment, tracking, when it ships, etc.).
+        - product_inquiry: the customer is asking about a specific product (availability, colors/sizes, materials, features,
+          fit, care, whether you carry an item, stock for a product/style, product details). Not about an existing order shipment.
         - support: any other tickets should go to a support agent.
     
-    If the customer mentions a specific order number or order ID, set order_id to that value.
+    If the customer mentions a specific order number or order ID, set order_id to that value (order_status only).
     If they ask about order status but do not name a specific order, leave order_id empty (null).
+    For product_inquiry, leave order_id empty unless they are clearly asking about order status too (prefer the dominant intent).
     
     You will also find any additional contact info that might be in the ticket body like name, email or phone, if there are any. 
     """

@@ -12,6 +12,8 @@ from app.apparel_magic.client_async import AsyncApparelMagicClient
 from app.apparel_magic.models import Order, OrderItem
 from app.settings import Settings
 from app.zoho.desk.client_async import AsyncZohoDeskClient
+from app.zoho.desk.comment_html import plain_text_to_zoho_html
+from app.services.product_inquiry_runner import run_product_inquiry
 from app.zoho.desk.intent_classifier import IntentClassifier
 
 logger = logging.getLogger(__name__)
@@ -19,6 +21,9 @@ logger = logging.getLogger(__name__)
 SHOPIFY_MAILER_EMAIL = "mailer@shopify.com"
 PROCESSED_TICKET_EVENTS = frozenset({"Ticket_Add"})
 MAX_ORDERS_IN_REPLY = 50
+
+# TODO: remove — QA only. Product inquiry runs only for this Zoho Desk departmentId (webhook payload).
+_PRODUCT_INQUIRY_DEPARTMENT_ID_IT = "1125678000004960029"
 
 
 def normalize_events(raw: Any) -> list[dict[str, Any]]:
@@ -29,6 +34,11 @@ def normalize_events(raw: Any) -> list[dict[str, Any]]:
     if isinstance(raw, dict):
         return [raw]
     return []
+
+
+def _department_allows_product_inquiry(payload: dict[str, Any]) -> bool:
+    dept = str(payload.get("departmentId") or "").strip()
+    return dept == _PRODUCT_INQUIRY_DEPARTMENT_ID_IT
 
 
 def _resolve_requester_email(payload: dict[str, Any]) -> str | None:
@@ -163,20 +173,13 @@ def _build_order_status_html(orders: list[Order]) -> str:
     return header + body
 
 
-def _plain_text_to_zoho_html(text: str) -> str:
-    """Turn plain text (possibly multi-line) into simple HTML for Desk comments."""
-    lines = text.splitlines()
-    if not lines:
-        return "<p></p>"
-    inner = "<br />".join(html.escape(line) for line in lines)
-    return f"<p>{inner}</p>"
-
-
 async def process_ticket_add_payload(
     payload: dict[str, Any],
     zoho: AsyncZohoDeskClient,
     am: AsyncApparelMagicClient,
     classifier: IntentClassifier,
+    http: httpx.AsyncClient,
+    settings: Settings,
 ) -> None:
     ticket_id = str(payload.get("id") or "")
     if not ticket_id:
@@ -207,12 +210,38 @@ async def process_ticket_add_payload(
     )
     body_for_llm = f"{subject}\n\n{description_text}".strip()
 
+    intent = await classifier.classify_async(subject, body_for_llm or subject)
+
+    if intent.intent == "support":
+        logger.info("Ticket %s intent=%s; not auto-handling", ticket_id, intent.intent)
+        return
+
+    if intent.intent == "product_inquiry":
+        if not _department_allows_product_inquiry(payload):
+            logger.info(
+                "Skipping product_inquiry for ticket %s (departmentId=%r; QA gate: IT only)",
+                ticket_id,
+                payload.get("departmentId"),
+            )
+            return
+        comment_html = await run_product_inquiry(
+            ticket_id=ticket_id,
+            subject=subject,
+            body=body_for_llm or subject,
+            http=http,
+            settings=settings,
+        )
+        if comment_html:
+            await zoho.add_public_comment(ticket_id, comment_html)
+            logger.info("Posted product-inquiry comment on ticket %s", ticket_id)
+        else:
+            logger.info("Product-inquiry produced no public comment for ticket %s", ticket_id)
+        return
+
     customer = await am.get_customer_by_email(requester_email)
     if not customer or not customer.customer_id:
         logger.info("No Apparel Magic customer for %s; skipping automation", requester_email)
         return
-
-    intent = await classifier.classify_async(subject, body_for_llm or subject)
 
     contact_email = (intent.email or requester_email).strip()
     if contact_email.lower() != requester_email.lower():
@@ -240,7 +269,7 @@ async def process_ticket_add_payload(
             and customer.customer_id
             and str(order.customer_id) != str(customer.customer_id)
         ):
-            msg = _plain_text_to_zoho_html(
+            msg = plain_text_to_zoho_html(
                 "Thank you for contacting Gameday Social. We could not match that order "
                 "to your account. If you believe this is an error, please reply with "
                 "the email address used on the order."
@@ -262,6 +291,7 @@ async def _handle_one_event(
     zoho: AsyncZohoDeskClient,
     am: AsyncApparelMagicClient,
     classifier: IntentClassifier,
+    http: httpx.AsyncClient,
     settings: Settings,
 ) -> None:
     org_id = str(event.get("orgId") or "")
@@ -279,7 +309,7 @@ async def _handle_one_event(
         logger.warning("Event missing payload dict")
         return
 
-    await process_ticket_add_payload(payload, zoho, am, classifier)
+    await process_ticket_add_payload(payload, zoho, am, classifier, http, settings)
 
 
 async def process_zoho_webhook_events(
@@ -298,6 +328,6 @@ async def process_zoho_webhook_events(
 
     for event in events:
         try:
-            await _handle_one_event(event, zoho, am, classifier, settings)
+            await _handle_one_event(event, zoho, am, classifier, http, settings)
         except Exception:
             logger.exception("Failed processing webhook event")
