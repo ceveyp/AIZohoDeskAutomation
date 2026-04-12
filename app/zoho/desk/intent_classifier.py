@@ -30,9 +30,14 @@ instructions = (
     
     You will then categorize the ticket according to intent:
         - order_status: the customer wants to know the status of their order (shipment, tracking, when it ships, etc.).
-        - product_inquiry: the customer is asking about a specific product (availability, colors/sizes, materials, features,
-          fit, care, whether you carry an item, stock for a product/style, product details). Not about an existing order shipment.
-        - support: any other tickets should go to a support agent.
+        - product_inquiry: the customer is asking about a specific product or whether you sell/carry/have it—including
+          availability, in stock / out of stock, colors, sizes, materials, fit, care, features, or product details.
+          Use product_inquiry even if they only name a product (e.g. a collection or style name) without a SKU.
+          Examples that MUST be product_inquiry: "Do you have [product name] in stock?", "Is this available?",
+          "Do you carry Accent On Dance …?", "What sizes does the … come in?", "What is it made of?"
+          Not order_status unless they are clearly asking about an existing order's shipment.
+        - support: tickets that are not about a specific product and not about order shipment status—e.g. account issues,
+          website problems, billing disputes, returns process without naming a product to buy, generic "help" with no product.
     
     If the customer mentions a specific order number or order ID, set order_id to that value (order_status only).
     If they ask about order status but do not name a specific order, leave order_id empty (null).

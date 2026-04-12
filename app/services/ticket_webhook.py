@@ -213,7 +213,14 @@ async def process_ticket_add_payload(
     intent = await classifier.classify_async(subject, body_for_llm or subject)
 
     if intent.intent == "support":
-        logger.info("Ticket %s intent=%s; not auto-handling", ticket_id, intent.intent)
+        _body_snip = (body_for_llm or "")[:500]
+        logger.info(
+            "Ticket %s intent=%s; not auto-handling subject=%r body_prefix=%r",
+            ticket_id,
+            intent.intent,
+            subject[:300],
+            _body_snip,
+        )
         return
 
     if intent.intent == "product_inquiry":
