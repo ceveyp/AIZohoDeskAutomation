@@ -11,6 +11,7 @@ import trafilatura
 
 from app.apparel_magic.client_async import AsyncApparelMagicClient
 from app.apparel_magic.models import Order, OrderItem
+from app.constants import LOG_SNIPPET_CHARS
 from app.settings import Settings
 from app.zoho.desk.client_async import AsyncZohoDeskClient
 from app.zoho.desk.comment_html import plain_text_to_zoho_html
@@ -84,8 +85,9 @@ async def _html_to_text(html_fragment: str | None) -> str:
     fallback = _strip_html_to_plain(html_fragment)
     if fallback:
         logger.debug(
-            "trafilatura returned empty description; using HTML strip fallback (%d chars)",
+            "trafilatura returned empty description; HTML strip fallback len=%d preview=%r",
             len(fallback),
+            fallback[:LOG_SNIPPET_CHARS],
         )
     return fallback
 
@@ -243,12 +245,12 @@ async def process_ticket_add_payload(
     intent = await classifier.classify_async(subject, body_for_llm or subject)
 
     if intent.intent == "support":
-        _body_snip = (body_for_llm or "")[:500]
+        _body_snip = (body_for_llm or "")[:LOG_SNIPPET_CHARS]
         logger.info(
             "Ticket %s intent=%s; not auto-handling subject=%r body_prefix=%r",
             ticket_id,
             intent.intent,
-            subject[:300],
+            subject[:LOG_SNIPPET_CHARS],
             _body_snip,
         )
         return
@@ -272,7 +274,11 @@ async def process_ticket_add_payload(
             await zoho.add_public_comment(ticket_id, comment_html)
             logger.info("Posted product-inquiry comment on ticket %s", ticket_id)
         else:
-            logger.info("Product-inquiry produced no public comment for ticket %s", ticket_id)
+            logger.info(
+                "Product-inquiry produced no public comment for ticket %s context_snippet=%r",
+                ticket_id,
+                (body_for_llm or "")[:LOG_SNIPPET_CHARS],
+            )
         return
 
     customer = await am.get_customer_by_email(requester_email)

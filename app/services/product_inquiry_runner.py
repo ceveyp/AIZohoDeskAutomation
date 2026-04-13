@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.agent.product_inquiry_agent import ProductInquiryAgent, validate_reply
+from app.constants import LOG_SNIPPET_CHARS
 from app.settings import Settings
 from app.zoho.desk.comment_html import plain_text_to_zoho_html
 
@@ -30,16 +31,38 @@ async def run_product_inquiry(
     try:
         agent = ProductInquiryAgent(http, settings)
         raw = await agent.run(subject, body)
+        ticket_ctx = (f"{subject}\n{body}").strip()[:LOG_SNIPPET_CHARS]
+        logger.debug(
+            "product_inquiry_model_output ticket_id=%s post_reply=%s reply_plain_len=%s",
+            ticket_id or "",
+            raw.post_reply,
+            len((raw.reply_plain or "")),
+        )
         reply = validate_reply(raw)
         if not reply.post_reply or not reply.reply_plain:
             logger.info(
-                "product_inquiry_no_public_reply",
+                "product_inquiry_no_public_reply ticket_id=%s raw_post_reply=%s raw_reply_plain_len=%s "
+                "validated_post_reply=%s validated_reply_plain_len=%s ticket_context_snippet=%r",
+                ticket_id or "",
+                raw.post_reply,
+                len((raw.reply_plain or "")),
+                reply.post_reply,
+                len((reply.reply_plain or "")),
+                ticket_ctx,
                 extra={**extra_base, "post_reply": False},
             )
             return None
+        preview = (reply.reply_plain or "")[:LOG_SNIPPET_CHARS]
         logger.info(
-            "product_inquiry_public_reply",
-            extra={**extra_base, "post_reply": True, "reply_chars": len(reply.reply_plain)},
+            "product_inquiry_public_reply ticket_id=%s reply_chars=%s reply_preview=%r",
+            ticket_id or "",
+            len(reply.reply_plain),
+            preview,
+            extra={
+                **extra_base,
+                "post_reply": True,
+                "reply_chars": len(reply.reply_plain),
+            },
         )
         return plain_text_to_zoho_html(reply.reply_plain)
     except Exception:
