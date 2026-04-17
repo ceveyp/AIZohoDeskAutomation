@@ -208,10 +208,11 @@ def _build_order_status_html(orders: list[Order]) -> str:
 
 async def _maybe_assign_ticket_from_am_salesperson(
     zoho: AsyncZohoDeskClient,
+    am: AsyncApparelMagicClient,
     ticket_id: str,
     customer: Customer,
 ) -> None:
-    assignee = await resolve_zoho_assignee_for_customer(zoho, customer)
+    assignee = await resolve_zoho_assignee_for_customer(am, zoho, customer)
     if assignee and assignee.assignee_id:
         try:
             await zoho.update_ticket_assignee(ticket_id, assignee.assignee_id)
@@ -286,7 +287,7 @@ async def process_ticket_add_payload(
             alt = await am.get_customer_by_email(contact_email)
             if alt and alt.customer_id:
                 customer = alt
-        await _maybe_assign_ticket_from_am_salesperson(zoho, ticket_id, customer)
+        await _maybe_assign_ticket_from_am_salesperson(zoho, am, ticket_id, customer)
 
     if intent.intent == "support":
         _body_snip = (body_for_llm or "")[:LOG_SNIPPET_CHARS]

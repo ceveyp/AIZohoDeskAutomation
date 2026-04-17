@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from app.apparel_magic.client_async import AsyncApparelMagicClient
 from app.apparel_magic.models import Customer
 from app.zoho.desk.client_async import AsyncZohoDeskClient
 
@@ -55,24 +56,59 @@ def _first_salesperson(customer: Customer) -> dict[str, Any] | None:
     return first if isinstance(first, dict) else None
 
 
+def _salesperson_id_from_stub(stub: dict[str, Any]) -> str:
+    return str(stub.get("salesperson_id") or stub.get("id") or "").strip()
+
+
+def _merge_stub_and_detail(
+    stub: dict[str, Any],
+    detail: dict[str, Any] | None,
+) -> tuple[str, str, str]:
+    """
+    Build (am_salesperson_id, name, email) for matching.
+    Customer embed often omits email; GET /salespeople/{id} supplies it.
+    """
+    sp_id = _salesperson_id_from_stub(stub)
+    if detail:
+        sp_id = str(detail.get("id") or sp_id).strip()
+        name = str(detail.get("name") or stub.get("name") or "").strip()
+        email = str(detail.get("email") or "").strip()
+        if not name:
+            name = str(stub.get("name") or "").strip()
+    else:
+        name = str(stub.get("name") or "").strip()
+        email = str(stub.get("email") or "").strip()
+    return sp_id, name, email
+
+
 async def resolve_zoho_assignee_for_customer(
+    am: AsyncApparelMagicClient,
     zoho: AsyncZohoDeskClient,
     customer: Customer,
 ) -> ZohoAssigneeMatch | None:
     """
     Match customer.salespeople[0] to a Zoho Desk agent.
+    Loads full salesperson from AM via GET /salespeople/{salesperson_id} (email, etc.).
     Priority:
     1) salesperson email exact (if present),
     2) salesperson full name exact,
     3) salesperson first-name exact only when unique.
     """
-    salesperson = _first_salesperson(customer)
-    if not salesperson:
+    stub = _first_salesperson(customer)
+    if not stub:
         return None
 
-    sp_id = str(salesperson.get("salesperson_id") or "").strip()
-    sp_name = str(salesperson.get("name") or "").strip()
-    sp_email = str(salesperson.get("email") or "").strip()
+    lookup_id = _salesperson_id_from_stub(stub)
+    detail: dict[str, Any] | None = None
+    if lookup_id:
+        try:
+            rows = await am.get_salesperson_by_id(lookup_id)
+            if rows:
+                detail = rows[0]
+        except Exception:
+            logger.exception("Failed to fetch AM salesperson id=%s", lookup_id)
+
+    sp_id, sp_name, sp_email = _merge_stub_and_detail(stub, detail)
     if not sp_name and not sp_email:
         return None
 

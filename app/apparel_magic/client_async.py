@@ -160,3 +160,16 @@ class AsyncApparelMagicClient:
             raise RuntimeError(
                 f"Error fetching inventory for product_id ({invoice_id}): {e}"
             ) from e
+
+    async def get_salesperson_by_id(self, salesperson_id: str) -> list[dict[str, Any]]:
+        """Get salesperson by ID"""
+        url = f"{self._base_url}/salespeople/{salesperson_id}"
+        try:
+            resp = await self._api_call("GET", url)
+            rows = resp.get("response") or []
+            return [r for r in rows if isinstance(r, dict)]
+        except Exception as e:
+            logger.exception(f"Error fetching salesperson: {salesperson_id}")
+            raise RuntimeError(
+                f"Error fetching salesperson: {salesperson_id}: {e}"
+            ) from e
