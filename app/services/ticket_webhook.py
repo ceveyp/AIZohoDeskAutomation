@@ -10,7 +10,7 @@ import httpx
 import trafilatura
 
 from app.apparel_magic.client_async import AsyncApparelMagicClient
-from app.apparel_magic.models import Order, OrderItem
+from app.apparel_magic.models import Customer, Order, OrderItem
 from app.constants import LOG_SNIPPET_CHARS
 from app.settings import Settings
 from app.zoho.desk.client_async import AsyncZohoDeskClient
@@ -206,6 +206,40 @@ def _build_order_status_html(orders: list[Order]) -> str:
     return header + body
 
 
+async def _maybe_assign_ticket_from_am_salesperson(
+    zoho: AsyncZohoDeskClient,
+    ticket_id: str,
+    customer: Customer,
+) -> None:
+    assignee = await resolve_zoho_assignee_for_customer(zoho, customer)
+    if assignee and assignee.assignee_id:
+        try:
+            await zoho.update_ticket_assignee(ticket_id, assignee.assignee_id)
+            logger.info(
+                "Assigned ticket %s to Zoho agent id=%s name=%r email=%r (AM salesperson name=%r id=%r reason=%s)",
+                ticket_id,
+                assignee.assignee_id,
+                assignee.name,
+                assignee.email,
+                assignee.am_salesperson_name,
+                assignee.am_salesperson_id,
+                assignee.reason,
+            )
+        except Exception:
+            logger.exception(
+                "Failed assigning ticket %s from AM salesperson name=%r id=%r",
+                ticket_id,
+                assignee.am_salesperson_name,
+                assignee.am_salesperson_id,
+            )
+    else:
+        logger.info(
+            "No salesperson->Zoho assignee match for ticket %s customer_id=%s",
+            ticket_id,
+            customer.customer_id,
+        )
+
+
 async def process_ticket_add_payload(
     payload: dict[str, Any],
     zoho: AsyncZohoDeskClient,
@@ -245,6 +279,15 @@ async def process_ticket_add_payload(
 
     intent = await classifier.classify_async(subject, body_for_llm or subject)
 
+    customer: Customer | None = await am.get_customer_by_email(requester_email)
+    if customer and customer.customer_id:
+        contact_email = (intent.email or requester_email).strip()
+        if contact_email.lower() != requester_email.lower():
+            alt = await am.get_customer_by_email(contact_email)
+            if alt and alt.customer_id:
+                customer = alt
+        await _maybe_assign_ticket_from_am_salesperson(zoho, ticket_id, customer)
+
     if intent.intent == "support":
         _body_snip = (body_for_llm or "")[:LOG_SNIPPET_CHARS]
         logger.info(
@@ -282,48 +325,13 @@ async def process_ticket_add_payload(
             )
         return
 
-    customer = await am.get_customer_by_email(requester_email)
-    if not customer or not customer.customer_id:
-        logger.info("No Apparel Magic customer for %s; skipping automation", requester_email)
-        return
-
-    contact_email = (intent.email or requester_email).strip()
-    if contact_email.lower() != requester_email.lower():
-        alt = await am.get_customer_by_email(contact_email)
-        if alt and alt.customer_id:
-            customer = alt
-
     if intent.intent != "order_status":
         logger.info("Ticket %s intent=%s; not auto-handling", ticket_id, intent.intent)
         return
 
-    assignee = await resolve_zoho_assignee_for_customer(zoho, customer)
-    if assignee and assignee.assignee_id:
-        try:
-            await zoho.update_ticket_assignee(ticket_id, assignee.assignee_id)
-            logger.info(
-                "Assigned ticket %s to Zoho agent id=%s name=%r email=%r (AM salesperson name=%r id=%r reason=%s)",
-                ticket_id,
-                assignee.assignee_id,
-                assignee.name,
-                assignee.email,
-                assignee.am_salesperson_name,
-                assignee.am_salesperson_id,
-                assignee.reason,
-            )
-        except Exception:
-            logger.exception(
-                "Failed assigning ticket %s from AM salesperson name=%r id=%r",
-                ticket_id,
-                assignee.am_salesperson_name,
-                assignee.am_salesperson_id,
-            )
-    else:
-        logger.info(
-            "No salesperson->Zoho assignee match for ticket %s customer_id=%s",
-            ticket_id,
-            customer.customer_id,
-        )
+    if not customer or not customer.customer_id:
+        logger.info("No Apparel Magic customer for %s; skipping automation", requester_email)
+        return
 
     oid = (intent.order_id or "").strip()
 
