@@ -16,6 +16,7 @@ from app.settings import Settings
 from app.zoho.desk.client_async import AsyncZohoDeskClient
 from app.zoho.desk.comment_html import plain_text_to_zoho_html
 from app.services.product_inquiry_runner import run_product_inquiry
+from app.services.zoho_assignee import resolve_zoho_assignee_for_customer
 from app.zoho.desk.intent_classifier import IntentClassifier
 
 logger = logging.getLogger(__name__)
@@ -295,6 +296,34 @@ async def process_ticket_add_payload(
     if intent.intent != "order_status":
         logger.info("Ticket %s intent=%s; not auto-handling", ticket_id, intent.intent)
         return
+
+    assignee = await resolve_zoho_assignee_for_customer(zoho, customer)
+    if assignee and assignee.assignee_id:
+        try:
+            await zoho.update_ticket_assignee(ticket_id, assignee.assignee_id)
+            logger.info(
+                "Assigned ticket %s to Zoho agent id=%s name=%r email=%r (AM salesperson name=%r id=%r reason=%s)",
+                ticket_id,
+                assignee.assignee_id,
+                assignee.name,
+                assignee.email,
+                assignee.am_salesperson_name,
+                assignee.am_salesperson_id,
+                assignee.reason,
+            )
+        except Exception:
+            logger.exception(
+                "Failed assigning ticket %s from AM salesperson name=%r id=%r",
+                ticket_id,
+                assignee.am_salesperson_name,
+                assignee.am_salesperson_id,
+            )
+    else:
+        logger.info(
+            "No salesperson->Zoho assignee match for ticket %s customer_id=%s",
+            ticket_id,
+            customer.customer_id,
+        )
 
     oid = (intent.order_id or "").strip()
 

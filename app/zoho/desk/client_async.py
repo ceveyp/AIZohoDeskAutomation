@@ -97,6 +97,29 @@ class AsyncZohoDeskClient:
             json_body={"content": content, "isPublic": True},
         )
 
+    async def list_agents(
+        self,
+        *,
+        limit: int = 100,
+        from_index: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Return Zoho Desk agents as raw dict rows."""
+        url = f"{self._desk_base}/agents"
+        resp = await self._api_call(
+            "GET",
+            url,
+            params={"limit": max(1, min(limit, 100)), "from": max(from_index, 0)},
+        )
+        rows = resp.get("data") if isinstance(resp, dict) else []
+        if not isinstance(rows, list):
+            return []
+        return [r for r in rows if isinstance(r, dict)]
+
+    async def update_ticket_assignee(self, ticket_id: str, assignee_id: str) -> dict[str, Any]:
+        """Assign a ticket to a Zoho Desk agent (assigneeId)."""
+        url = f"{self._desk_base}/tickets/{ticket_id}"
+        return await self._api_call("PATCH", url, json_body={"assigneeId": assignee_id})
+
     async def update_ticket_status(self, ticket_id: str, status: str) -> dict[str, Any]:
         url = f"{self._desk_base}/tickets/{ticket_id}"
         return await self._api_call("PATCH", url, json_body={"status": status})

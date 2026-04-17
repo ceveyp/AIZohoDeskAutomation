@@ -28,12 +28,12 @@ class AsyncApparelMagicClient:
         )
 
     async def _api_call(
-        self,
-        method: str,
-        url: str,
-        *,
-        params: dict[str, Any] | None = None,
-        data: dict[str, Any] | None = None,
+            self,
+            method: str,
+            url: str,
+            *,
+            params: dict[str, Any] | None = None,
+            data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if params is not None:
             self._add_auth_params(params)
@@ -146,4 +146,17 @@ class AsyncApparelMagicClient:
             logger.exception("Error fetching inventory for product_id %s", product_id)
             raise RuntimeError(
                 f"Error fetching inventory for product_id ({product_id}): {e}"
+            ) from e
+
+    async def get_invoice_by_id(self, invoice_id: str) -> list[dict[str, Any]]:
+        """Get invoice by ID"""
+        url = f"{self._base_url}/invoices/{invoice_id}"
+        try:
+            resp = await self._api_call("GET", url)
+            rows = resp.get("response") or []
+            return [r for r in rows if isinstance(r, dict)]
+        except Exception as e:
+            logger.exception("Error fetching invoice for invoice ID %s", invoice_id)
+            raise RuntimeError(
+                f"Error fetching inventory for product_id ({invoice_id}): {e}"
             ) from e

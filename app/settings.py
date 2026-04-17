@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     product_search_min_confidence: float | None = None
     # Optional: minimum gap between 1st and 2nd hit scores (same scale as above) to avoid ambiguous matches.
     product_search_min_leader_gap: float | None = None
+    google_client_id: str
+    google_client_secret: str
+    google_refresh_token: str
 
 
 @lru_cache

@@ -8,3 +8,5 @@ lxml_html_clean
 validators
 langchain_openai
 langchain
+google-auth>=2.0.0
+google-auth-oauthlib>=1.2.0

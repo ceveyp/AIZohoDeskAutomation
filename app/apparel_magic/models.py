@@ -93,7 +93,7 @@ class Customer(BaseModel):
     salespeople: List[dict] = Field(default_factory=list)
     people: List[Person] = Field(default_factory=list)
     locations: List[dict] = Field(default_factory=list)
-    tags: List[str] = Field(default_factory=list)
+    tags: List[dict] = Field(default_factory=list)
     buyer_filters: List[dict] = Field(default_factory=list)
 
     # Miscellaneous / Catch-all
