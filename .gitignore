@@ -6,3 +6,6 @@ __pycache__/
 .idea
 /.cursor/
 /scripts/
+/customer.example
+/order_by_po.example
+/orders.example

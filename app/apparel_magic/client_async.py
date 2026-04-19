@@ -98,6 +98,26 @@ class AsyncApparelMagicClient:
             logger.exception("Error fetching orders for customer %s", customer_id)
             raise RuntimeError(f"Error fetching orders for customer ({customer_id}): {e}") from e
 
+    async def get_orders_by_customer_po(self, customer_po: str) -> list[Order]:
+        """Orders where ``customer_po`` equals the given value (AM filter)."""
+        url = f"{self._base_url}/orders"
+        params = {
+            "parameters[0][field]": "customer_po",
+            "parameters[0][operator]": "=",
+            "parameters[0][value]": customer_po.strip(),
+        }
+        try:
+            resp = await self._api_call("GET", url, params=params)
+            orders = resp.get("response") or []
+            if not orders:
+                return []
+            return [Order(**o) for o in orders]
+        except Exception as e:
+            logger.exception("Error fetching orders for customer_po %s", customer_po)
+            raise RuntimeError(
+                f"Error fetching orders for customer_po ({customer_po}): {e}"
+            ) from e
+
     async def get_raw_product_by_id(self, product_id: str) -> dict[str, Any] | None:
         """Single product row from AM ``GET /products/{id}`` (first element of ``response``)."""
         url = f"{self._base_url}/products/{product_id}"

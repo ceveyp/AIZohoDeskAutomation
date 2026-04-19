@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +34,20 @@ class Settings(BaseSettings):
     google_client_id: str
     google_client_secret: str
     google_refresh_token: str
+
+    # Optional Shopify Admin API (retail order-status when no AM customer match)
+    shopify_access_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SHOPIFY_ACCESS_TOKEN"),
+    )
+    shopify_shop: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SHOPIFY_SHOP"),
+    )
+    shopify_api_version: str = Field(
+        default="2025-04",
+        validation_alias=AliasChoices("SHOPIFY_API_VERSION"),
+    )
 
 
 @lru_cache

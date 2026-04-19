@@ -10,11 +10,11 @@ import httpx
 import trafilatura
 
 from app.apparel_magic.client_async import AsyncApparelMagicClient
-from app.apparel_magic.models import Customer, Order, OrderItem
+from app.apparel_magic.models import Customer
 from app.constants import LOG_SNIPPET_CHARS
 from app.settings import Settings
 from app.zoho.desk.client_async import AsyncZohoDeskClient
-from app.zoho.desk.comment_html import plain_text_to_zoho_html
+from app.services.order_status_runner import run_order_status
 from app.services.product_inquiry_runner import run_product_inquiry
 from app.services.zoho_assignee import resolve_zoho_assignee_for_customer
 from app.zoho.desk.intent_classifier import IntentClassifier
@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 SHOPIFY_MAILER_EMAIL = "mailer@shopify.com"
 PROCESSED_TICKET_EVENTS = frozenset({"Ticket_Add"})
-MAX_ORDERS_IN_REPLY = 50
 
 # TODO: remove — QA only. Product inquiry runs only for this Zoho Desk departmentId (webhook payload).
 _PRODUCT_INQUIRY_DEPARTMENT_ID_IT = "1125678000004960029"
@@ -91,119 +90,6 @@ async def _html_to_text(html_fragment: str | None) -> str:
             fallback[:LOG_SNIPPET_CHARS],
         )
     return fallback
-
-
-def _sort_orders_newest_first(orders: list[Order]) -> list[Order]:
-    return sorted(orders, key=lambda o: o.date or "", reverse=True)
-
-
-def _fmt_money(amount: float | int | None) -> str:
-    if amount is None:
-        return "—"
-    try:
-        return f"${float(amount):,.2f}"
-    except (TypeError, ValueError):
-        return str(amount)
-
-
-def _line_sku(line: OrderItem) -> str:
-    if line.sku_alt:
-        return line.sku_alt
-    if line.style_number and line.attr_2 and line.size:
-        return f"{line.style_number} / {line.attr_2} / {line.size}"
-    return line.sku_id or line.style_number or "—"
-
-
-def _format_line_item_html(line: OrderItem, index: int, currency: str) -> str:
-    desc = line.description or "Product"
-    cur = f" {currency}" if currency else ""
-    cur_suffix = f" {currency}" if currency else ""
-    parts = [
-        f"Item {index}: {desc}",
-        f"SKU: {_line_sku(line)}",
-        f"Size: {line.size or '—'}",
-        f"Color: {line.attr_2 or '—'}",
-        f"Qty: {line.qty or '0'}",
-        f"Line amount: {_fmt_money(line.amount)}{cur_suffix}",
-    ]
-    if line.qty_open is not None or line.qty_shipped is not None:
-        parts.append(
-            f"Qty open / shipped: {line.qty_open or '0'} / {line.qty_shipped or '0'}"
-        )
-    if line.date_due:
-        parts.append(f"Ship by: {line.date_due}")
-    inner = "<br />".join(html.escape(p) for p in parts)
-    return f"<p>{inner}</p>"
-
-
-def _format_one_order_html(o: Order) -> str:
-    cur = o.currency_name or ""
-    oid = html.escape(str(o.order_id or "N/A"))
-    header_lines = [
-        f"Order date: {o.date or '—'}",
-        f"Due date: {o.date_due or '—'}",
-    ]
-    if o.date_start:
-        header_lines.append(f"Start date: {o.date_start}")
-    if o.last_modified_time:
-        header_lines.append(f"Last updated: {o.last_modified_time}")
-    header_lines.extend(
-        [
-            f"Overall fulfillment: {o.fulfillment_status or '—'}",
-            f"WMS status: {o.wms_status or '—'}",
-            f"Order qty (open / shipped): {o.qty_open or '0'} / {o.qty_shipped or '0'}",
-        ]
-    )
-    if o.ship_via:
-        header_lines.append(f"Ship via: {o.ship_via}")
-    if o.balance is not None:
-        header_lines.append(f"Balance: {_fmt_money(o.balance)}{(' ' + cur) if cur else ''}")
-
-    header_inner = "<br />".join(html.escape(x) for x in header_lines)
-    blocks = [f"<p><b>Order {oid}</b><br />{header_inner}</p>"]
-
-    items = o.order_items or []
-    if items:
-        blocks.append("<p><b>" + html.escape("Items") + "</b></p>")
-        for i, line in enumerate(items, start=1):
-            blocks.append(_format_line_item_html(line, i, cur))
-    else:
-        blocks.append(
-            "<p>"
-            + html.escape("No line items were returned for this order.")
-            + "</p>"
-        )
-
-    return "".join(blocks)
-
-
-def _build_order_status_html(orders: list[Order]) -> str:
-    """HTML body for Zoho Desk public comments (renders line breaks in UI and email)."""
-    if not orders:
-        return (
-            "<p>"
-            + html.escape(
-                "Thank you for contacting Gameday Social. We could not find any orders "
-                "for your account in our system."
-            )
-            + "</p>"
-        )
-    header = (
-        "<p>"
-        + html.escape(
-            "Thank you for contacting Gameday Social. Here is the status we have on file:"
-        )
-        + "</p>"
-    )
-    blocks = [_format_one_order_html(o) for o in orders[:MAX_ORDERS_IN_REPLY]]
-    body = "<hr />".join(blocks)
-    if len(orders) > MAX_ORDERS_IN_REPLY:
-        body += (
-            "<p>"
-            + html.escape(f"(Showing first {MAX_ORDERS_IN_REPLY} orders.)")
-            + "</p>"
-        )
-    return header + body
 
 
 async def _maybe_assign_ticket_from_am_salesperson(
@@ -330,41 +216,36 @@ async def process_ticket_add_payload(
         logger.info("Ticket %s intent=%s; not auto-handling", ticket_id, intent.intent)
         return
 
-    if not customer or not customer.customer_id:
-        logger.info("No Apparel Magic customer for %s; skipping automation", requester_email)
+    os_result = await run_order_status(
+        ticket_id=ticket_id,
+        subject=subject,
+        body=body_for_llm or subject,
+        http=http,
+        settings=settings,
+        am=am,
+        requester_email=requester_email,
+        intent=intent,
+        customer=customer,
+    )
+    if os_result.skipped:
+        logger.info(
+            "Order-status noop (no Shopify/AM context) ticket %s email=%s",
+            ticket_id,
+            requester_email,
+        )
         return
-
-    oid = (intent.order_id or "").strip()
-
-    if oid:
-        order = await am.get_order_by_id(oid)
-        if not order:
-            logger.info(
-                "Order %s not found in AM for ticket %s; leaving ticket for support",
-                oid,
-                ticket_id,
-            )
-            return
-        if (
-            order.customer_id
-            and customer.customer_id
-            and str(order.customer_id) != str(customer.customer_id)
-        ):
-            msg = plain_text_to_zoho_html(
-                "Thank you for contacting Gameday Social. We could not match that order "
-                "to your account. If you believe this is an error, please reply with "
-                "the email address used on the order."
-            )
-        else:
-            msg = _build_order_status_html([order])
-    else:
-        all_orders = await am.get_orders_by_customer_id(str(customer.customer_id))
-        orders_out = _sort_orders_newest_first(all_orders)
-        msg = _build_order_status_html(orders_out)
-
-    await zoho.add_public_comment(ticket_id, msg)
-    await zoho.update_ticket_status(ticket_id, "Closed")
-    logger.info("Processed order-status ticket %s", ticket_id)
+    if os_result.public_html:
+        await zoho.add_public_comment(ticket_id, os_result.public_html)
+        logger.info(
+            "Posted order-status comment on ticket %s handoff=%s",
+            ticket_id,
+            os_result.handoff_support,
+        )
+    if os_result.close_ticket:
+        await zoho.update_ticket_status(ticket_id, "Closed")
+        logger.info("Closed order-status ticket %s", ticket_id)
+    elif os_result.handoff_support and not os_result.public_html:
+        logger.info("Order-status handoff (no public reply) ticket %s", ticket_id)
 
 
 async def _handle_one_event(
