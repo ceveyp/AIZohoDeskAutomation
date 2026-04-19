@@ -22,9 +22,9 @@ from app.zoho.desk.intent_classifier import IntentClassifier
 logger = logging.getLogger(__name__)
 
 SHOPIFY_MAILER_EMAIL = "mailer@shopify.com"
-PROCESSED_TICKET_EVENTS = frozenset({"Ticket_Add"})
+PROCESSED_TICKET_EVENTS = frozenset({"Ticket_Add", "Ticket_Update"})
 
-# TODO: remove — QA only. Product inquiry runs only for this Zoho Desk departmentId (webhook payload).
+# Product inquiry is limited to this department unless Settings.product_inquiry_all_departments is true.
 _PRODUCT_INQUIRY_DEPARTMENT_ID_IT = "1125678000004960029"
 
 
@@ -38,7 +38,9 @@ def normalize_events(raw: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _department_allows_product_inquiry(payload: dict[str, Any]) -> bool:
+def _department_allows_product_inquiry(payload: dict[str, Any], settings: Settings) -> bool:
+    if settings.product_inquiry_all_departments:
+        return True
     dept = str(payload.get("departmentId") or "").strip()
     return dept == _PRODUCT_INQUIRY_DEPARTMENT_ID_IT
 
@@ -92,6 +94,27 @@ async def _html_to_text(html_fragment: str | None) -> str:
     return fallback
 
 
+def _normalize_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip())
+
+
+async def _ticket_dict_to_body_plain(ticket: dict[str, Any]) -> str:
+    """
+    Plain text from ticket description plus first thread (e.g. chat transcript).
+    Used for LLM input and for Ticket_Update change detection.
+    """
+    parts: list[str] = []
+    desc = ticket.get("description")
+    if isinstance(desc, str) and desc.strip():
+        parts.append(await _html_to_text(desc))
+    first = ticket.get("firstThread")
+    if isinstance(first, dict):
+        content = first.get("content")
+        if isinstance(content, str) and content.strip():
+            parts.append(await _html_to_text(content))
+    return "\n\n".join(p.strip() for p in parts if p.strip()).strip()
+
+
 async def _maybe_assign_ticket_from_am_salesperson(
     zoho: AsyncZohoDeskClient,
     am: AsyncApparelMagicClient,
@@ -134,10 +157,13 @@ async def process_ticket_add_payload(
     classifier: IntentClassifier,
     http: httpx.AsyncClient,
     settings: Settings,
+    *,
+    event_type: str = "Ticket_Add",
+    prev_state: dict[str, Any] | None = None,
 ) -> None:
     ticket_id = str(payload.get("id") or "")
     if not ticket_id:
-        logger.warning("Ticket_Add payload missing id")
+        logger.warning("Ticket webhook payload missing id (event_type=%s)", event_type)
         return
 
     if payload.get("isSpam") or payload.get("isArchived") or payload.get("isTrashed"):
@@ -157,12 +183,20 @@ async def process_ticket_add_payload(
         logger.debug("Skipping Shopify mailer ticket %s", ticket_id)
         return
 
+    if event_type == "Ticket_Update" and isinstance(prev_state, dict):
+        body_cur = await _ticket_dict_to_body_plain(payload)
+        body_prev = await _ticket_dict_to_body_plain(prev_state)
+        if _normalize_ws(body_cur) == _normalize_ws(body_prev):
+            logger.info(
+                "Skipping %s for ticket %s (description/firstThread plain text unchanged)",
+                event_type,
+                ticket_id,
+            )
+            return
+
     subject = str(payload.get("subject") or "")
-    description_html = payload.get("description")
-    description_text = await _html_to_text(
-        description_html if isinstance(description_html, str) else None
-    )
-    body_for_llm = f"{subject}\n\n{description_text}".strip()
+    body_plain = await _ticket_dict_to_body_plain(payload)
+    body_for_llm = f"{subject}\n\n{body_plain}".strip()
 
     intent = await classifier.classify_async(subject, body_for_llm or subject)
 
@@ -187,9 +221,10 @@ async def process_ticket_add_payload(
         return
 
     if intent.intent == "product_inquiry":
-        if not _department_allows_product_inquiry(payload):
+        if not _department_allows_product_inquiry(payload, settings):
             logger.info(
-                "Skipping product_inquiry for ticket %s (departmentId=%r; QA gate: IT only)",
+                "Skipping product_inquiry for ticket %s (departmentId=%r; "
+                "allowed only for IT department unless PRODUCT_INQUIRY_ALL_DEPARTMENTS=true)",
                 ticket_id,
                 payload.get("departmentId"),
             )
@@ -271,7 +306,18 @@ async def _handle_one_event(
         logger.warning("Event missing payload dict")
         return
 
-    await process_ticket_add_payload(payload, zoho, am, classifier, http, settings)
+    prev = event.get("prevState")
+    prev_state = prev if isinstance(prev, dict) else None
+    await process_ticket_add_payload(
+        payload,
+        zoho,
+        am,
+        classifier,
+        http,
+        settings,
+        event_type=str(event_type or "Ticket_Add"),
+        prev_state=prev_state,
+    )
 
 
 async def process_zoho_webhook_events(

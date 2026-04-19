@@ -49,6 +49,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SHOPIFY_API_VERSION"),
     )
 
+    # Product inquiry: false = only IT department (see ticket_webhook); true = all departments.
+    product_inquiry_all_departments: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "product_inquiry_all_departments",
+            "PRODUCT_INQUIRY_ALL_DEPARTMENTS",
+        ),
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
