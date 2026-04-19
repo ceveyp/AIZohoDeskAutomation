@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
+import json
 import logging
 import re
 from typing import Any
@@ -21,11 +23,54 @@ from app.zoho.desk.intent_classifier import IntentClassifier
 
 logger = logging.getLogger(__name__)
 
+# Large Zoho payloads (chat HTML) are logged in chunks to avoid single-line limits.
+_LOG_JSON_CHUNK_SIZE = 24_000
+
 SHOPIFY_MAILER_EMAIL = "mailer@shopify.com"
 PROCESSED_TICKET_EVENTS = frozenset({"Ticket_Add", "Ticket_Update"})
 
 # Product inquiry is limited to this department unless Settings.product_inquiry_all_departments is true.
 _PRODUCT_INQUIRY_DEPARTMENT_ID_IT = "1125678000004960029"
+
+
+def _log_json_chunks(prefix: str, obj: Any, *, level: int = logging.DEBUG) -> None:
+    """Serialize ``obj`` to JSON and log in chunks (handles huge chat transcripts)."""
+    try:
+        serialized = json.dumps(obj, default=str)
+    except Exception as exc:
+        logger.log(level, "%s json.dumps failed: %s", prefix, exc)
+        return
+    n = len(serialized)
+    if n <= _LOG_JSON_CHUNK_SIZE:
+        logger.log(level, "%s len=%d %s", prefix, n, serialized)
+        return
+    total_chunks = (n + _LOG_JSON_CHUNK_SIZE - 1) // _LOG_JSON_CHUNK_SIZE
+    logger.log(level, "%s len=%d chunks=%d", prefix, n, total_chunks)
+    for start in range(0, n, _LOG_JSON_CHUNK_SIZE):
+        part = start // _LOG_JSON_CHUNK_SIZE + 1
+        logger.log(
+            level,
+            "%s chunk %d/%d %s",
+            prefix,
+            part,
+            total_chunks,
+            serialized[start : start + _LOG_JSON_CHUNK_SIZE],
+        )
+
+
+def _first_thread_diagnostics(ticket: dict[str, Any]) -> dict[str, Any]:
+    ft = ticket.get("firstThread")
+    if not isinstance(ft, dict):
+        return {"firstThread": None}
+    content = ft.get("content")
+    raw = content if isinstance(content, str) else ""
+    digest = hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return {
+        "firstThread_id": ft.get("id"),
+        "firstThread_content_len": len(raw),
+        "firstThread_content_sha256_16": digest,
+        "firstThread_keys": sorted(ft.keys()),
+    }
 
 
 def normalize_events(raw: Any) -> list[dict[str, Any]]:
@@ -184,9 +229,43 @@ async def process_ticket_add_payload(
         return
 
     if event_type == "Ticket_Update" and isinstance(prev_state, dict):
+        desc_p = payload.get("description")
+        desc_prev = prev_state.get("description")
+        desc_p_len = len(desc_p) if isinstance(desc_p, str) else 0
+        desc_prev_len = len(desc_prev) if isinstance(desc_prev, str) else 0
+        diag_p = _first_thread_diagnostics(payload)
+        diag_prev = _first_thread_diagnostics(prev_state)
+        logger.info(
+            "Ticket_Update compare ticket_id=%s payload_modifiedTime=%r prev_modifiedTime=%r "
+            "payload_assigneeId=%r prev_assigneeId=%r desc_len_payload=%s desc_len_prev=%s "
+            "firstThread_diag_payload=%s firstThread_diag_prev=%s",
+            ticket_id,
+            payload.get("modifiedTime"),
+            prev_state.get("modifiedTime"),
+            payload.get("assigneeId"),
+            prev_state.get("assigneeId"),
+            desc_p_len,
+            desc_prev_len,
+            diag_p,
+            diag_prev,
+        )
         body_cur = await _ticket_dict_to_body_plain(payload)
         body_prev = await _ticket_dict_to_body_plain(prev_state)
-        if _normalize_ws(body_cur) == _normalize_ws(body_prev):
+        norm_cur = _normalize_ws(body_cur)
+        norm_prev = _normalize_ws(body_prev)
+        logger.info(
+            "Ticket_Update body_plain ticket_id=%s cur_len=%d prev_len=%d norm_equal=%s "
+            "cur_norm_sha16=%s prev_norm_sha16=%s cur_preview=%r prev_preview=%r",
+            ticket_id,
+            len(body_cur),
+            len(body_prev),
+            norm_cur == norm_prev,
+            hashlib.sha256(norm_cur.encode("utf-8", errors="replace")).hexdigest()[:16],
+            hashlib.sha256(norm_prev.encode("utf-8", errors="replace")).hexdigest()[:16],
+            body_cur[:LOG_SNIPPET_CHARS],
+            body_prev[:LOG_SNIPPET_CHARS],
+        )
+        if norm_cur == norm_prev:
             logger.info(
                 "Skipping %s for ticket %s (description/firstThread plain text unchanged)",
                 event_type,
@@ -197,6 +276,23 @@ async def process_ticket_add_payload(
     subject = str(payload.get("subject") or "")
     body_plain = await _ticket_dict_to_body_plain(payload)
     body_for_llm = f"{subject}\n\n{body_plain}".strip()
+    logger.info(
+        "ticket_webhook processing ticket_id=%s event_type=%s subject_len=%d body_plain_len=%d "
+        "body_for_llm_len=%d departmentId=%r channel=%r status=%r",
+        ticket_id,
+        event_type,
+        len(subject),
+        len(body_plain),
+        len(body_for_llm),
+        payload.get("departmentId"),
+        payload.get("channel"),
+        payload.get("status"),
+    )
+    logger.debug(
+        "ticket_webhook body_for_llm preview ticket_id=%s preview=%r",
+        ticket_id,
+        body_for_llm[:LOG_SNIPPET_CHARS],
+    )
 
     intent = await classifier.classify_async(subject, body_for_llm or subject)
 
@@ -291,9 +387,26 @@ async def _handle_one_event(
     http: httpx.AsyncClient,
     settings: Settings,
 ) -> None:
+    event_type_raw = event.get("eventType")
+    org_id_raw = event.get("orgId")
+    logger.info(
+        "zoho_webhook event received eventType=%r orgId=%r orgId_type=%s event_keys=%s",
+        event_type_raw,
+        org_id_raw,
+        type(org_id_raw).__name__,
+        sorted(event.keys()) if isinstance(event, dict) else None,
+    )
+    _log_json_chunks("zoho_webhook full event JSON", event, level=logging.INFO)
+
     org_id = str(event.get("orgId") or "")
     if org_id != settings.zoho_org_id:
-        logger.warning("Ignoring event for orgId=%s (expected %s)", org_id, settings.zoho_org_id)
+        logger.warning(
+            "Ignoring event for orgId=%r str_orgId=%r (expected %s) eventType=%r",
+            org_id_raw,
+            org_id,
+            settings.zoho_org_id,
+            event_type_raw,
+        )
         return
 
     event_type = event.get("eventType")
@@ -306,7 +419,25 @@ async def _handle_one_event(
         logger.warning("Event missing payload dict")
         return
 
+    ticket_id_dbg = str(payload.get("id") or "")
+    logger.info(
+        "zoho_webhook accepted eventType=%s ticket_id=%s has_prevState=%s",
+        event_type,
+        ticket_id_dbg,
+        isinstance(event.get("prevState"), dict),
+    )
+    _log_json_chunks(
+        f"zoho_webhook full payload JSON ticket_id={ticket_id_dbg or 'unknown'}",
+        payload,
+        level=logging.INFO,
+    )
     prev = event.get("prevState")
+    if isinstance(prev, dict):
+        _log_json_chunks(
+            f"zoho_webhook full prevState JSON ticket_id={ticket_id_dbg or 'unknown'}",
+            prev,
+            level=logging.INFO,
+        )
     prev_state = prev if isinstance(prev, dict) else None
     await process_ticket_add_payload(
         payload,
@@ -325,10 +456,17 @@ async def process_zoho_webhook_events(
     http: httpx.AsyncClient,
     settings: Settings,
 ) -> None:
+    logger.debug(
+        "zoho_webhook raw body type=%s len=%s",
+        type(raw).__name__,
+        len(raw) if isinstance(raw, (str, bytes)) else None,
+    )
+    _log_json_chunks("zoho_webhook raw request body JSON", raw, level=logging.INFO)
     events = normalize_events(raw)
     if not events:
         logger.info("Webhook received empty or unrecognized body")
         return
+    logger.info("zoho_webhook normalized event count=%d", len(events))
 
     zoho = AsyncZohoDeskClient(http, settings)
     am = AsyncApparelMagicClient(http, settings)
