@@ -42,13 +42,16 @@ async def run_product_inquiry(
         if not reply.post_reply or not reply.reply_plain:
             logger.info(
                 "product_inquiry_no_public_reply ticket_id=%s raw_post_reply=%s raw_reply_plain_len=%s "
-                "validated_post_reply=%s validated_reply_plain_len=%s ticket_context_snippet=%r",
+                "validated_post_reply=%s validated_reply_plain_len=%s ticket_context_snippet=%r "
+                "raw_reply_plain_preview=%r (check internal_inventory_search_catalog_response raw_count vs "
+                "returned_count if PRODUCT_SEARCH_MIN_* filters empty results)",
                 ticket_id or "",
                 raw.post_reply,
                 len((raw.reply_plain or "")),
                 reply.post_reply,
                 len((reply.reply_plain or "")),
                 ticket_ctx,
+                (raw.reply_plain or "")[:LOG_SNIPPET_CHARS],
                 extra={**extra_base, "post_reply": False},
             )
             return None

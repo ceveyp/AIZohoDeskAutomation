@@ -1,8 +1,12 @@
 from functools import lru_cache
+import logging
+import os
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -58,7 +62,67 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Optional LangSmith / LangChain tracing (sets LANGCHAIN_* env vars for LangChain agents).
+    langsmith_tracing: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "LANGSMITH_TRACING",
+            "LANGCHAIN_TRACING_V2",
+        ),
+    )
+    langsmith_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "LANGSMITH_API_KEY",
+            "LANGCHAIN_API_KEY",
+        ),
+    )
+    langsmith_project: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "LANGSMITH_PROJECT",
+            "LANGCHAIN_PROJECT",
+        ),
+    )
+    langsmith_endpoint: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "LANGSMITH_ENDPOINT",
+            "LANGCHAIN_ENDPOINT",
+        ),
+    )
+
+
+def configure_langchain_tracing(settings: Settings) -> None:
+    """
+    LangChain reads LANGCHAIN_TRACING_V2 and LANGCHAIN_API_KEY at run time for LangSmith.
+    Call once after Settings load (see get_settings).
+    """
+    if not settings.langsmith_tracing:
+        return
+    key = (settings.langsmith_api_key or "").strip()
+    if not key:
+        _logger.warning(
+            "LangSmith tracing requested (LANGSMITH_TRACING) but no LANGSMITH_API_KEY / LANGCHAIN_API_KEY set"
+        )
+        return
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_API_KEY"] = key
+    proj = (settings.langsmith_project or "").strip()
+    if proj:
+        os.environ["LANGCHAIN_PROJECT"] = proj
+    endpoint = (settings.langsmith_endpoint or "").strip()
+    if endpoint:
+        os.environ["LANGCHAIN_ENDPOINT"] = endpoint.rstrip("/")
+    _logger.info(
+        "LangChain tracing enabled for LangSmith (project=%r endpoint_set=%s)",
+        proj or "(default)",
+        bool(endpoint),
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    configure_langchain_tracing(settings)
+    return settings

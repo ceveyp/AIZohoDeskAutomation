@@ -9,11 +9,11 @@ from app.settings import get_settings
 
 
 def create_app() -> FastAPI:
+    setup_logging()
     settings = get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        setup_logging()
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
             app.state.http_client = client
             yield

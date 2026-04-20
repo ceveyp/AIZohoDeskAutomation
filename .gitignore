@@ -11,3 +11,4 @@ __pycache__/
 /orders.example
 /first_update.json
 /second_update.json
+/recent.log
