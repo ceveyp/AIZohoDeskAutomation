@@ -267,11 +267,9 @@ async def process_ticket_add_payload(
         )
         if norm_cur == norm_prev:
             logger.info(
-                "Skipping %s for ticket %s (description/firstThread plain text unchanged)",
-                event_type,
+                "Ticket_Update unchanged content check disabled for testing; continuing ticket_id=%s",
                 ticket_id,
             )
-            return
 
     subject = str(payload.get("subject") or "")
     body_plain = await _ticket_dict_to_body_plain(payload)
