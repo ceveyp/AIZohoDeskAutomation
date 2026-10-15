@@ -1,0 +1,85 @@
+---
+title: AI Support Automation for Zoho Desk (LangGraph/FastAPI)
+---
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#E8F4FC',
+    'primaryTextColor': '#1a1a1a',
+    'primaryBorderColor': '#2B6CB0',
+    'lineColor': '#4A5568',
+    'secondaryColor': '#F0FFF4',
+    'tertiaryColor': '#FFFAF0',
+    'fontFamily': 'Segoe UI, system-ui, sans-serif',
+    'fontSize': '16px'
+  },
+  'flowchart': { 'curve': 'basis', 'padding': 20, 'nodeSpacing': 50, 'rankSpacing': 60 },
+  'themeCSS': '.titleText { font-size: 28px !important; font-weight: 700; } .title { font-size: 28px !important; font-weight: 700; }'
+}}%%
+flowchart TB
+    T([Support ticket<br/>in Zoho Desk])
+
+    subgraph API["FastAPI service"]
+        direction TB
+        EP["POST /webhooks/zoho<br/>verify token · return 202 Accepted"]
+        BG[Background job<br/>process ticket]
+    end
+
+    subgraph AUTO["AI agents (structured outputs)"]
+        direction TB
+        TAG_AGENT[Tagging agent<br/>pick tags from playbook]
+        CLASS_AGENT[Intent agent<br/>order · product · support]
+        D{What is the ticket<br/>about?}
+    end
+
+    O_AGENT[Order status agent<br/>reply from order context]
+    P_AGENT[Product inquiry agent<br/>catalog + inventory tools]
+
+    O[Order or shipping<br/>answer]
+    P[Product<br/>answer]
+    H[Team<br/>handles it]
+
+    subgraph DATA[" "]
+        direction LR
+        ERP[Wholesale<br/>orders & products]
+        STORE[Online store<br/>orders]
+        CAT[Product<br/>catalog]
+    end
+
+    T -->|Ticket_Add / Ticket_Update| EP
+    EP --> BG
+    BG --> TAG_AGENT
+    TAG_AGENT --> CLASS_AGENT
+    CLASS_AGENT --> D
+
+    D -->|Order status| O_AGENT
+    D -->|Product question| P_AGENT
+    D -->|Other| H
+
+    O_AGENT --> O
+    P_AGENT --> P
+
+    O -.-> ERP
+    O -.-> STORE
+    P -.-> CAT
+    P -.-> ERP
+
+    O -->|Public reply on ticket| T
+    P -->|Public reply on ticket| T
+    TAG_AGENT -->|Tags on ticket| T
+
+    classDef desk fill:#2B6CB0,stroke:#1E4E8C,color:#fff,stroke-width:2px
+    classDef api fill:#EDF2F7,stroke:#4A5568,color:#1a1a1a
+    classDef agent fill:#BEE3F8,stroke:#2B6CB0,color:#1a1a1a
+    classDef decision fill:#FFFAF0,stroke:#C05621,color:#1a1a1a
+    classDef action fill:#F0FFF4,stroke:#276749,color:#1a1a1a
+    classDef human fill:#EDF2F7,stroke:#718096,color:#1a1a1a
+    classDef data fill:#FAF5FF,stroke:#6B46C1,color:#1a1a1a
+
+    class T desk
+    class EP,BG api
+    class CLASS_AGENT,TAG_AGENT,O_AGENT,P_AGENT agent
+    class D decision
+    class O,P action
+    class H human
+    class ERP,STORE,CAT data
