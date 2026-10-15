@@ -18,6 +18,7 @@ from app.settings import Settings
 from app.zoho.desk.client_async import AsyncZohoDeskClient
 from app.services.order_status_runner import run_order_status
 from app.services.product_inquiry_runner import run_product_inquiry
+from app.services.ticket_tagging_runner import tag_ticket
 from app.services.zoho_assignee import resolve_zoho_assignee_for_customer
 from app.zoho.desk.intent_classifier import IntentClassifier
 
@@ -291,6 +292,18 @@ async def process_ticket_add_payload(
         ticket_id,
         body_for_llm[:LOG_SNIPPET_CHARS],
     )
+    try:
+        await tag_ticket(
+            ticket_id=ticket_id,
+            subject=subject,
+            body=body_for_llm or subject,
+            payload=payload,
+            zoho=zoho,
+            http=http,
+            settings=settings,
+        )
+    except Exception:
+        logger.exception("ticket_tagging_failed ticket_id=%s", ticket_id)
 
     intent = await classifier.classify_async(subject, body_for_llm or subject)
 

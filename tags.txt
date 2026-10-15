@@ -1,0 +1,27 @@
+"sales" — Tickets that should go to sales.
+"callback" — Request for a phone call or technical follow-up.
+"shipping eta" — General inquiry regarding delivery timelines.
+"return policy – wholesale" — Questions about wholesale return terms.
+"product - restock inquiry" — Customer asking when an out-of-stock item will be back.
+"shipping error - incorrect missing item" — Post-delivery support for fulfillment mistakes.
+"discount code issue" — Technical trouble applying a promo code at checkout.
+"spam" — Junk tickets to be filtered or deleted.
+"order inquiry – pending" — Questions about orders that haven't shipped or are stuck in processing.
+"new customer - custom" — Lead for custom-branded or bespoke bulk apparel.
+"new customer - wholesale" — New business lead interested in a wholesale account.
+"pr request" — Press, media, or influencer inquiries.
+"product - picture request" — Request for high-res assets or real-life photos of items.
+"vender request" — Suppliers or service providers pitching to Gameday Social.
+"order inquiry - need invoice" — Customer requesting a PDF copy of their invoice.
+"interest for new university" — Requests to add a specific school or license to the collection.
+"wholesale signup - faire customer" — Leads originating from the Faire marketplace.
+"retail order" — Support related to a standard direct-to-consumer purchase.
+"partnership request" — Collaboration or sponsorship proposals.
+"wholesale order" — Support related to an existing bulk/B2B order.
+"shipping eta - wholesale" — Tracking inquiry specifically for a bulk shipment.
+"shipping eta - retail" — Tracking inquiry specifically for a single consumer order.
+"shipping eta - faire order" — Tracking inquiry for orders placed via Faire.
+"shipping error - damaged" — Replacement/refund request for goods damaged in transit.
+"overdue order" — Orders that have passed their expected ship or pay date.
+"customer feedback" — Reviews, suggestions, or general comments.
+"job" — Shorthand for general recruitment inquiries.

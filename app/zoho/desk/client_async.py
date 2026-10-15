@@ -73,6 +73,12 @@ class AsyncZohoDeskClient:
         data = await self._api_call("GET", url)
         return Ticket(**data)
 
+    async def get_ticket_raw(self, ticket_id: str) -> dict[str, Any]:
+        """Return raw ticket payload from Zoho Desk (all fields)."""
+        url = f"{self._desk_base}/tickets/{ticket_id}"
+        data = await self._api_call("GET", url)
+        return data if isinstance(data, dict) else {}
+
     async def list_conversations(self, ticket_id: str) -> list[Conversation]:
         url = f"{self._desk_base}/tickets/{ticket_id}/conversations"
         resp = await self._api_call("GET", url)
@@ -123,3 +129,11 @@ class AsyncZohoDeskClient:
     async def update_ticket_status(self, ticket_id: str, status: str) -> dict[str, Any]:
         url = f"{self._desk_base}/tickets/{ticket_id}"
         return await self._api_call("PATCH", url, json_body={"status": status})
+
+    async def associate_tags(self, ticket_id: str, tags: list[str]) -> dict[str, Any]:
+        """
+        Associate one or more tags with a ticket.
+        Zoho endpoint: POST /api/v1/tickets/{ticket_id}/associateTag
+        """
+        url = f"{self._desk_base}/tickets/{ticket_id}/associateTag"
+        return await self._api_call("POST", url, json_body={"tags": tags})
