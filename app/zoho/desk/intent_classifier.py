@@ -18,13 +18,7 @@ class TicketIntent(BaseModel):
 
 instructions = (
     """
-    You will help classify incoming Zoho Desk support tickets for a website called Gameday Social. 
-    
-    About Gameday Social: 
-    
-    "Gameday Social offers elevated collegiate and lifestyle apparel, expertly designed by women for women. 
-    The brand provides a diverse range of clothing options, including tops, outerwear, and bottoms. 
-    The collection features team logos and custom branded apparel for various organizations, with wholesale purchasing available."
+    You will help classify incoming Zoho Desk support tickets.
     
     You will receive some context about the ticket, any associated contact info like email or phone, the subject and ticket content.
     

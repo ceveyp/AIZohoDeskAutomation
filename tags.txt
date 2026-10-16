@@ -11,7 +11,7 @@
 "new customer - wholesale" — New business lead interested in a wholesale account.
 "pr request" — Press, media, or influencer inquiries.
 "product - picture request" — Request for high-res assets or real-life photos of items.
-"vender request" — Suppliers or service providers pitching to Gameday Social.
+"vender request" — Suppliers or service providers pitching.
 "order inquiry - need invoice" — Customer requesting a PDF copy of their invoice.
 "interest for new university" — Requests to add a specific school or license to the collection.
 "wholesale signup - faire customer" — Leads originating from the Faire marketplace.

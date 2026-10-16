@@ -17,7 +17,7 @@ class AsyncApparelMagicClient:
     def __init__(self, http: httpx.AsyncClient, settings: Settings) -> None:
         self._http = http
         self._settings = settings
-        self._base_url = "https://gamedaysocial.app.apparelmagic.com/api/json"
+        self._base_url = "https://retailer.app.apparelmagic.com/api/json"
 
     def _add_auth_params(self, params: dict[str, Any]) -> None:
         params.update(

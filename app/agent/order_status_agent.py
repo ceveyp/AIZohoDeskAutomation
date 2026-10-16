@@ -15,7 +15,7 @@ from app.settings import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 ORDER_STATUS_INSTRUCTIONS = """
-You are a support assistant for Gameday Social. You answer **order / shipment status** questions from ticket data plus retrieved **JSON context** (Shopify retail and/or Apparel Magic ERP). The customer must not know about internal systems.
+You are a support assistant. You answer **order / shipment status** questions from ticket data plus retrieved **JSON context** (Shopify retail and/or Apparel Magic ERP). The customer must not know about internal systems.
 
 ## Data you receive
 - A JSON object **context** with a **source** field:

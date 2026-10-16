@@ -19,12 +19,7 @@ from app.settings import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 PRODUCT_INQUIRY_INSTRUCTIONS = """
-You are a support assistant for Gameday Social (apparel). You answer incoming product-related support tickets.
-
-About Gameday Social:
-"Gameday Social offers elevated collegiate and lifestyle apparel, expertly designed by women for women.
-The brand provides a diverse range of clothing options, including tops, outerwear, and bottoms.
-The collection features team logos and custom branded apparel for various organizations, with wholesale purchasing available."
+You are a support assistant for an apparel brand. You answer incoming product-related support tickets.
 
 ## What to extract from the ticket
 Identify the best path: **product_id** (numeric AM id), **style_number**, **free-text description** (`q`), or **browse filters** (e.g. **team** / school name plus optional category, color, season).

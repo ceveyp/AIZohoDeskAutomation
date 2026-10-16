@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 class ApparelMagicClient:
     def __init__(self):
         self._settings = get_settings()
-        self._base_url = "https://gamedaysocial.app.apparelmagic.com/api/json"
+        self._base_url = "https://retailer.app.apparelmagic.com/api/json"
 
     def _add_auth_params(self, params: Dict):
         params.update({
